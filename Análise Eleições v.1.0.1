@@ -1,0 +1,357 @@
+---
+title: "Análise Eleições v1.0.1"
+author: "Mateus Alvarenga"
+date: "Janeiro 2021"
+output: 
+   html_document:
+       theme: readable
+       number_sections: yes
+       toc: yes
+       toc_float:
+         collapsed: yes
+         smooth_scroll: no
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Esse scrit permite obter um relatório de eleições gerais utilizando o pacote electionsBR
+
+# Instalando pacotes necessários 
+```{r, message= FALSE, warning= FALSE}
+library(electionsBR)
+library(geobr)
+library(tidyverse)
+library(sf)
+library (ggrepel)
+library(DT)
+library(knitr)
+library(rmdformats)
+```
+
+# Carregar dados eleitorais
+  O Repositório de dados do TSE (https://www.tse.jus.br/hotsites/pesquisas-eleitorais/index.html) permite o download no formato .zip de dados eleitorais de todas as eleições desde o ano de 1945. O pacote "electionBR" realiza o download desses dados e retorna um data.frame manipulável. Podemos escolher o ano desejado `year = ` e o estado desejado `uf=`.
+
+Para fins demonstrativos, utilizaresmo as eleições gerais de 2014 no estado da PB
+
+Para mais informações visite: http://electionsbr.com/reference/index.html
+
+```{r, message= FALSE, warning= FALSE}
+# Candidatos que disputaram as eleições gerais em 2014 no estado da PB (download rápido)
+PB_consulta_cand_2014 <- candidate_fed(year= 2014, uf= 'PB')
+
+# Votação por município e zona eleitoral para cada candidato que disputou as eleições gerais em 2014 no estado da PB (download demora)
+PB_munzona_2014 <- vote_mun_zone_fed(year = 2014, uf = 'PB')
+```
+
+
+## Preparando data.frames auxiliares 
+
+  É importante criar alguns data.frames menores a partir dos já criados com as funções do electionsBR. Isso permitirá linhas de códigos menores nas próximas etapas de criação de nosso relatório, assim como um menor desgaste de processamento do computador.
+
+ 
+ * Votação por município e zona eleitoral dos Candidatos a Deputado Federal (`cand_DepFed_PB_munzona_2014`) e Estadual (`cand_DepEst_PB_munzona_2014`) no Estado da PB:
+```{r}
+# Deputados Federais
+cand_DepFed_PB_munzona_2014 <- PB_munzona_2014 %>% filter(DESCRICAO_CARGO == 'Deputado Federal')
+
+# Deputados Estaduais
+cand_DepEst_PB_munzona_2014 <- PB_munzona_2014 %>% filter(DESCRICAO_CARGO == 'Deputado Estadual')
+```
+
+ * Votação por município e zona eleitoral dos Deputados Federais (`eleitos_DepFed_PB_munzona_2014`) e Estaduais (`eleitos_DepEst_PB_munzona_2014`) **Eleitos** na PB:
+```{r}
+#Deputados Federais eleitos
+eleitos_DepFed_PB_munzona_2014 <- PB_munzona_2014 %>% 
+  filter (DESCRICAO_CARGO == 'Deputado Federal' & DS_SIT_TOT_TURNO %in% c("ELEITO POR MÉDIA", "ELEITO POR QP"))
+
+# Deputados estaduais eleitos
+eleitos_DepEst_PB_munzona_2014 <- PB_munzona_2014 %>% 
+  filter (DESCRICAO_CARGO == 'Deputado Estadual' & DS_SIT_TOT_TURNO %in% c("ELEITO POR MÉDIA", "ELEITO POR QP"))
+```
+
+# Analisando resultados eleitorais - Eleições Gerais
+  Nesta seção iremos analisar os resultados eleitorais das eleições gerais 2014 no estado da PB. Iniciaremos nossa análise comparando partidos (3.1) e então seguiremos para uma análise do desempenho geral dos candidatos (3.2). 
+  
+## Desempenho dos Partidos
+
+### Governador e Senadores
+
+* Governador
+```{r warning= FALSE}
+votos_Gov_PB_2014 <- PB_munzona_2014 %>%
+  filter(DESCRICAO_CARGO == 'Governador') %>%
+  group_by(NM_URNA_CANDIDATO, SG_PARTIDO) %>%
+  summarise ('QT_VOTOS_NOMINAIS' = sum(QT_VOTOS_NOMINAIS))
+
+ggplot(votos_Gov_PB_2014,  aes (x = reorder(NM_URNA_CANDIDATO, +QT_VOTOS_NOMINAIS), y=QT_VOTOS_NOMINAIS/1000)) +
+  geom_col(aes(fill = SG_PARTIDO)) +
+  geom_text(aes(label = QT_VOTOS_NOMINAIS)) + 
+  theme_minimal() +
+  labs (title = "Votos para governador do estado da PB",
+        subtitle = "Eleições Gerais 2014", 
+        caption = "Dados: Repositório de dados TSE",
+        fill = "Partido") +
+  xlab("Candidato") +
+  ylab ('Votos Recebidos (em milhares)') +
+  coord_flip() +
+  ylim(0, 2250)
+```
+
+* Senadores
+```{r warning=FALSE}
+votos_Sen_PB_2014 <- PB_munzona_2014 %>%
+  filter(DESCRICAO_CARGO == 'Senador') %>%
+  group_by(NM_URNA_CANDIDATO, SG_PARTIDO) %>%
+  summarise ('QT_VOTOS_NOMINAIS' = sum(QT_VOTOS_NOMINAIS))
+
+ggplot(votos_Sen_PB_2014,  aes (x = reorder(NM_URNA_CANDIDATO, +QT_VOTOS_NOMINAIS), y=QT_VOTOS_NOMINAIS/1000)) +
+  geom_col(aes(fill = SG_PARTIDO)) +
+  geom_text(aes(label = QT_VOTOS_NOMINAIS)) + 
+  theme_minimal() +
+  labs (title = "Votos para Senador do estado da PB",
+        subtitle = "Eleições Gerais 2014", 
+        caption = "Dados: Repositório de dados TSE", 
+        fill = "Partido") +
+  xlab("Candidato") +
+  ylab ('Votos Recebidos (em milhares)') +
+  coord_flip()+
+  ylim(0, 650)
+```
+
+
+### Deputados Federais e Estaduais
+
+#### Candidatos por partido
+  Aqui conferimos quantos candidatos cada partido inscreveu para os cargos de deputado federal (`cand_part_DepFed_PB_2014`) e deputado estadual(`cand_part_DepEst_PB_2014`) do estado da PB.
+  
+ * Deputado Federal
+```{r}
+cand_part_DepFed_PB_2014 <- PB_consulta_cand_2014 %>%
+  filter (DS_CARGO == 'DEPUTADO FEDERAL') %>%
+  group_by(SG_PARTIDO) %>%
+  summarise(n_candidatos = n())
+
+# view (cand_part_DepFed_PB_2014)
+
+ggplot (cand_part_DepFed_PB_2014, aes(x= reorder(SG_PARTIDO, -n_candidatos), y= n_candidatos)) +
+  geom_col(aes(fill = SG_PARTIDO)) +
+  geom_text(aes(label = n_candidatos)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = 'none') +
+  xlab ("Sigla Partido") +
+  ylab ("Número de Candidatos") +
+  labs (title = "Número de candidatos à deputado federal por partido PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE"  )
+  
+```
+
+ * Deputado Estadual
+```{r}
+cand_part_DepEst_PB_2014 <- PB_consulta_cand_2014 %>%
+  filter (DS_CARGO == 'DEPUTADO ESTADUAL') %>%
+  group_by(SG_PARTIDO) %>%
+  summarise(n_candidatos = n())
+
+# view (cand_part_DepFed_PB_2014)
+
+ggplot (cand_part_DepEst_PB_2014, aes(x= reorder(SG_PARTIDO, -n_candidatos), y= n_candidatos)) +
+  geom_col(aes(fill = SG_PARTIDO)) +
+  geom_text(aes(label = n_candidatos)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = 'none') + 
+  xlab ("Sigla Partido") +
+  ylab ("Número de Candidatos") +
+  labs (title = "Número de candidatos à deputado estadual por partido PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE"  )
+  
+```
+
+
+#### Número de deputados eleitos por partido.
+
+  O df 'PB_consulta_cand', extraido anteriormente nesse código, contém a variável `DESC_SIT_TOT_TURNO` que mostra a situação do candidato no final do turno da eleição (ELEITO, NÃO ELEITO, SUPLENTE, ELEITO POR MÉDIA, ELEITO POR QP). No entanto, o pacote 'electionsBR' retornou um df em que essa variável está retornando #NULO#. 
+  
+  Para contornarmos esse problema utilizaresmo o df 'PB_munzona_2014, também extraido anteriormente nesse código, que possuí a variável `DS_SIT_TOT_TURNO` (equivalente à `DESC_SIT_TOT_TURNO`) e foi extraída da maneira correta pelo pacote electionsBR. Porém, precisamos que cada candidato seja representado somente uma vez, por isso utilizaremos a função `distinct()`
+  
+
+ * Deputados Federais
+```{r}
+eleitos_DepFed_PB_part_cand_2014 <- PB_munzona_2014 %>%
+  distinct(SQ_CANDIDATO, .keep_all = T) %>%
+  filter(DESCRICAO_CARGO == 'Deputado Federal' ) %>%
+  filter (DS_SIT_TOT_TURNO %in% c("ELEITO", "ELEITO POR MÉDIA", "ELEITO POR QP")) %>%
+  group_by(SG_PARTIDO) %>%
+  summarise (n_eleitos= n())
+
+ggplot(eleitos_DepFed_PB_part_cand_2014, aes(x = reorder(SG_PARTIDO, -n_eleitos), y = n_eleitos)) + 
+  geom_col(aes(fill= SG_PARTIDO)) +
+  geom_text(aes(label = n_eleitos), vjust = -0.1) +
+  labs( title = "Número de Deputados Federais eleitos por partido na PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE" ) +
+  xlab(" Partido") +
+  ylab("Número de eleitos") +
+  theme(legend.position = 'none')
+```
+
+ * Deputados Estaduais
+```{r}
+eleitos_DepEst_PB_part_cand_2014 <- PB_munzona_2014 %>%
+  distinct(SQ_CANDIDATO, .keep_all = T) %>%
+  filter(DESCRICAO_CARGO == 'Deputado Estadual' ) %>%
+  filter (DS_SIT_TOT_TURNO %in% c("ELEITO", "ELEITO POR MÉDIA", "ELEITO POR QP")) %>%
+  group_by(SG_PARTIDO) %>%
+  summarise (n_eleitos= n())
+
+ggplot(eleitos_DepEst_PB_part_cand_2014, aes(x = reorder(SG_PARTIDO, -n_eleitos), y = n_eleitos)) + 
+  geom_col(aes(fill= SG_PARTIDO)) +
+  geom_text(aes(label = n_eleitos)) +
+  labs( title = "Número de Deputados Estaduais eleitos por partido na PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE" ) +
+  xlab("Partido") +
+  ylab("Número de eleitos") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position =  'none')
+```
+ 
+#### Número de votos nominais para deputados por partido
+
+ * Deputados Federais
+```{r}
+# criando df
+votos_part_DepFed_PB_2014 <- PB_munzona_2014 %>%
+  filter(DESCRICAO_CARGO == 'Deputado Federal') %>%
+  group_by(SG_PARTIDO) %>%
+  summarize('n_votos' = sum(QT_VOTOS_NOMINAIS))
+```
+
+```{r}
+# tabela com kable() do pacore 'knitr'
+knitr:: kable(votos_part_DepFed_PB_2014, caption = "Votos recebidos por partido para Deputado Federal PB")
+
+```
+
+```{r}
+# plotando
+ggplot(votos_part_DepFed_PB_2014, aes(x= reorder(SG_PARTIDO, -n_votos), y = n_votos/1000)) +
+  geom_col(aes(fill= SG_PARTIDO), position = position_dodge(5)) +
+  geom_text(aes(label=n_votos), angle = 90, hjust = 0.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") +
+  labs( title = "Votos recebidos por partido para Deputado Federal PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ( "Partido") +
+  ylab  ("Votos Recebidos (em milhares)") +
+  ylim (0, 450)
+```
+
+
+ * Deputados Estaduais
+```{r}
+# criando df
+votos_part_DepEst_PB_2014 <- PB_munzona_2014 %>%
+  filter(DESCRICAO_CARGO == 'Deputado Estadual') %>%
+  group_by(SG_PARTIDO) %>%
+  summarize('n_votos' = sum(QT_VOTOS_NOMINAIS))
+```
+
+```{r}
+# tabela com kable() do pacore 'knitr'
+knitr::kable(votos_part_DepEst_PB_2014, caption = "Votos recebidos por partido para Deputado Estadual PB")
+```
+
+```{r}
+# plotando
+ggplot(votos_part_DepEst_PB_2014, aes(x= reorder(SG_PARTIDO, -n_votos), y = n_votos/1000)) +
+  geom_col(aes(fill= SG_PARTIDO)) +
+  geom_text(aes(label=n_votos), angle = 90, hjust = 0.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "none") +
+  labs( title = "Votos recebidos por partido para Deputado Estadual PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ( "Partido") +
+  ylab  ("Votos Recebidos (em milhares)") +
+  ylim (0,230)
+```
+
+
+#### Desempenho dos Eleitos por partido
+  Nessa seção iremos observar o deseménho dos deputados eleitos, comparando o desempenho dos eleitos com os demais mandatários de seu partido e os de partidos concorrentes.
+  
+* Deputados Federais
+```{r warning= FALSE, message=FALSE}
+# Criando um df com os deputados eleitos e o respectivo n° de votos recebidos  
+votos_DepFed_eleitos_PB_2014 <- group_by(eleitos_DepFed_PB_munzona_2014, SQ_CANDIDATO, NOME_CANDIDATO, NM_URNA_CANDIDATO, SG_PARTIDO) %>% 
+  summarise('n_votos' = sum(QT_VOTOS_NOMINAIS))
+
+# plotando 
+ggplot(votos_DepFed_eleitos_PB_2014, aes(x = reorder(SG_PARTIDO, -n_votos), y = n_votos/1000 )) +
+  geom_col(aes(colour = NM_URNA_CANDIDATO,fill = SG_PARTIDO), alpha = 0.65) +
+  labs (title = "Votação dos deputados federais eleitos por partido PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ( "Partido") +
+  ylab  ("Votos Recebidos em milhares") +
+  theme( legend.position = 'none') +
+  annotate (geom='text', x=7.10, y=300, label = "Cada bloco que compõe uma") +
+  annotate (geom='text', x=7.10, y=280, label = "coluna representa um único candidato") 
+
+```
+
+* Deputados Estaduais
+```{r warning= FALSE, message=FALSE}
+# Criando um df com os deputados eleitos e o respectivo n° de votos recebidos  
+votos_DepEst_eleitos_PB_2014 <- group_by(eleitos_DepEst_PB_munzona_2014, SQ_CANDIDATO, NOME_CANDIDATO, NM_URNA_CANDIDATO, SG_PARTIDO) %>% 
+  summarise('n_votos' = sum(QT_VOTOS_NOMINAIS))
+
+# plotando 
+ggplot(votos_DepEst_eleitos_PB_2014,aes(x = reorder(SG_PARTIDO, -n_votos), y = n_votos/1000)) +
+  geom_col(aes(colour = NM_URNA_CANDIDATO,fill = SG_PARTIDO), alpha = 0.65) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = 'none') +
+  labs (title = "Votação dos deputados estaduais eleitos por partido PB", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ( "Partido") +
+  ylab  ("Votos Recebidos (em milhares)") +
+  annotate (geom='text', x=7.05, y=200, label = "Cada bloco que compõe uma coluna representa um único candidato") 
+
+```
+
+## Dados Gerais sobre os candidatos
+  Analisaremos aqui o desempenho de todos os candidatos inscritos nas eleições.
+ 
+ * Deputado Federal
+```{r}
+# Deputados Federais
+votos_DepFed_all_PB_2014 <- PB_munzona_2014 %>%
+  filter (DESCRICAO_CARGO == "Deputado Federal") %>%
+  group_by(SQ_CANDIDATO) %>%
+  summarise("Votos_Recebidos" = sum(QT_VOTOS_NOMINAIS), 'Partido' = SG_PARTIDO) %>%
+  distinct()
+
+ggplot (votos_DepFed_all_PB_2014 ) +
+  geom_histogram(aes(Votos_Recebidos), binwidth = 2500,color="black", fill="lightblue" ) +
+  labs (title = "Distribuição de votos dos candidatos à deputado federal", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ('Quantidade de votos recebidos') +
+  ylab ('Número de candidatos') +
+  theme_classic() + 
+  annotate (geom='text', x=60000, y=40, label = "Percebos que a imensa maioria dos candidatos") + 
+  annotate ( geom = 'text', x = 60000, y = 38, label ="recebe uma quantidade de votos inferior a 5000 votos ") 
+```
+
+
+ * Deputado Estadual
+```{r}
+# Deputado Estadual
+votos_DepEst_all_PB_2014 <- PB_munzona_2014 %>%
+  filter (DESCRICAO_CARGO == "Deputado Estadual") %>%
+  group_by(SQ_CANDIDATO) %>%
+  summarise("Votos_Recebidos" = sum(QT_VOTOS_NOMINAIS), 'Partido' = SG_PARTIDO) %>%
+  distinct()
+
+ggplot (votos_DepEst_all_PB_2014 ) +
+  geom_histogram(aes(Votos_Recebidos), binwidth = 1000, color="black", fill="lightblue") +
+  labs (title = "Distribuição de votos dos candidatos à deputado estadual", subtitle = "Eleições Gerais 2014", caption = "Dados: Repositório de dados TSE") +
+  xlab ('Quantidade de votos recebidos') +
+  ylab ('Número de candidatos') +
+  annotate (geom='text', x=30000, y=200, label = "Percebos que a imensa maioria dos candidatos") + 
+  annotate ( geom = 'text', x = 30000, y = 188, label ="recebe uma quantidade de votos inferior a 1000 votos ") +
+  theme_classic()
+```
+
+<br>
+
+![](C:/Users/msalv/Documents/Profissional/meulogo.png) 
+
+Essa é versão 1.0.1 (v1.0.1) deste relatório, atualizaçãos no código serão feitas periodicamente.
+
+Sugestões são sempre bem-vindas, mande uma dm no twitter (@matealvarenga) ou um email (mateusalvarenga5@gmail.com).
+
+Agradeço a contribuição e auxílio dos meus colegas Hugo Treinero e Kevin Zavala Mattos.
