@@ -17,7 +17,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Esse scrit permite obter um relatório de eleições gerais utilizando o pacote electionsBR
+Esse scrit permite obter um relatório de eleições gerais até o ano de 2014 utilizando o pacote electionsBR
 
 # Instalando pacotes necessários 
 ```{r, message= FALSE, warning= FALSE}
